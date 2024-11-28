@@ -7,8 +7,7 @@ import subprocess
 import re
 import sysconfig
 import platform
-import skbuild
-from skbuild import cmaker
+from skbuild import cmaker, setup
 
 
 def main():
@@ -25,19 +24,26 @@ def main():
 
     install_requires = [
         'numpy>=1.13.3; python_version<"3.7"',
-        'numpy>=1.14.5; python_version>="3.7"',
+        'numpy>=1.17.0; python_version>="3.7"', # https://github.com/numpy/numpy/pull/13725
         'numpy>=1.17.3; python_version>="3.8"',
         'numpy>=1.19.3; python_version>="3.9"',
         'numpy>=1.21.2; python_version>="3.10"',
         'numpy>=1.19.3; python_version>="3.6" and platform_system=="Linux" and platform_machine=="aarch64"',
         'numpy>=1.21.0; python_version<="3.9" and platform_system=="Darwin" and platform_machine=="arm64"',
         'numpy>=1.21.4; python_version>="3.10" and platform_system=="Darwin"',
+        "numpy>=1.23.5; python_version>='3.11'",
+        "numpy>=1.26.0; python_version>='3.12'"
     ]
 
     python_version = cmaker.CMaker.get_python_version()
-    python_lib_path = cmaker.CMaker.get_python_library(python_version).replace(
-        "\\", "/"
-    )
+    python_lib_path = cmaker.CMaker.get_python_library(python_version) or ""
+    # HACK: For Scikit-build 0.17.3 and newer that returns None or empty sptring for PYTHON_LIBRARY in manylinux2014
+    # A small release related to PYTHON_LIBRARY handling changes in 0.17.2; scikit-build 0.17.3 returns an empty string from get_python_library if no Python library is present (like on manylinux), where 0.17.2 returned None, and previous versions returned a non-existent path. Note that adding REQUIRED to find_package(PythonLibs will fail, but it is incorrect (you must not link to libPython.so) and was really just injecting a non-existent path before.
+    # TODO: Remove the hack when the issue is handled correctly in main OpenCV CMake.
+    if python_lib_path == "":
+        python_lib_path = "libpython%sm.a" % python_version
+    python_lib_path = python_lib_path.replace("\\", "/")
+
     python_include_dir = cmaker.CMaker.get_python_include_dir(python_version).replace(
         "\\", "/"
     )
@@ -104,8 +110,14 @@ def main():
     # Path regexes with forward slashes relative to CMake install dir.
     rearrange_cmake_output_data = {
         "cv2": (
-            [r"bin/opencv_videoio_ffmpeg\d{3}%s\.dll" % ("_64" if is64 else "")]
+            [r"bin/opencv_videoio_ffmpeg\d{4}%s\.dll" % ("_64" if is64 else "")]
             if os.name == "nt"
+            else []
+        )
+        +
+        (
+            [r"lib/libOrbbecSDK.dylib", r"lib/libOrbbecSDK.\d.\d.dylib", r"lib/libOrbbecSDK.\d.\d.\d.dylib"]
+            if platform.system() == "Darwin" and platform.machine() == "arm64"
             else []
         )
         +
@@ -123,7 +135,10 @@ def main():
         +
         [
             r"python/cv2/.*config.*.py"
-        ],
+        ]
+        +
+        [ r"python/cv2/py.typed" ] if sys.version_info >= (3, 6) else []
+        ,
         "cv2.data": [  # OPENCV_OTHER_INSTALL_PATH
             ("etc" if os.name == "nt" else "share/opencv5") + r"/haarcascades/.*\.xml"
         ],
@@ -141,6 +156,9 @@ def main():
         ],
     }
 
+    if sys.version_info >= (3, 6):
+        rearrange_cmake_output_data["cv2.typing"] = ["python/cv2" + r"/typing/.*\.py"]
+
     # Files in sourcetree outside package dir that should be copied to package.
     # Raw paths relative to sourcetree root.
     files_outside_package_dir = {"cv2": ["LICENSE.txt", "LICENSE-3RD-PARTY.txt"]}
@@ -156,6 +174,7 @@ def main():
         + [
             # skbuild inserts PYTHON_* vars. That doesn't satisfy opencv build scripts in case of Py3
             "-DPYTHON3_EXECUTABLE=%s" % sys.executable,
+            "-DPYTHON_DEFAULT_EXECUTABLE=%s" % sys.executable,
             "-DPYTHON3_INCLUDE_DIR=%s" % python_include_dir,
             "-DPYTHON3_LIBRARY=%s" % python_lib_path,
             "-DBUILD_opencv_python3=ON",
@@ -246,23 +265,16 @@ def main():
             cmake_args.append("-DWITH_LAPACK=ON")
             cmake_args.append("-DENABLE_PRECOMPILED_HEADERS=OFF")
 
-    # https://github.com/scikit-build/scikit-build/issues/479
-    if "CMAKE_ARGS" in os.environ:
-        import shlex
-
-        cmake_args.extend(shlex.split(os.environ["CMAKE_ARGS"]))
-        del shlex
-
     # works via side effect
     RearrangeCMakeOutput(
         rearrange_cmake_output_data, files_outside_package_dir, package_data.keys()
     )
 
-    skbuild.setup(
+    setup(
         name=package_name,
         version=package_version,
         url="https://github.com/opencv/opencv-python",
-        license="MIT",
+        license="Apache 2.0",
         description="Wrapper package for OpenCV python bindings.",
         long_description=long_description,
         long_description_content_type="text/markdown",
@@ -279,7 +291,7 @@ def main():
             "Intended Audience :: Education",
             "Intended Audience :: Information Technology",
             "Intended Audience :: Science/Research",
-            "License :: OSI Approved :: MIT License",
+            "License :: OSI Approved :: Apache Software License",
             "Operating System :: MacOS",
             "Operating System :: Microsoft :: Windows",
             "Operating System :: POSIX",
@@ -292,6 +304,8 @@ def main():
             "Programming Language :: Python :: 3.8",
             "Programming Language :: Python :: 3.9",
             "Programming Language :: Python :: 3.10",
+            "Programming Language :: Python :: 3.11",
+            "Programming Language :: Python :: 3.12",
             "Programming Language :: C++",
             "Programming Language :: Python :: Implementation :: CPython",
             "Topic :: Scientific/Engineering",
@@ -302,8 +316,9 @@ def main():
         cmake_source_dir=cmake_source_dir,
     )
 
+    print("OpenCV is raising funds to keep the library free for everyone, and we need the support of the entire community to do it. Donate to OpenCV on GitHub:\nhttps://github.com/sponsors/opencv\n")
 
-class RearrangeCMakeOutput(object):
+class RearrangeCMakeOutput:
     """
         Patch SKBuild logic to only take files related to the Python package
         and construct a file hierarchy that SKBuild expects (see below)
@@ -384,7 +399,6 @@ class RearrangeCMakeOutput(object):
             p.replace(os.path.sep, "/") for p in install_relpaths
         ]
         relpaths_zip = list(zip(fslash_install_relpaths, install_relpaths))
-        del install_relpaths, fslash_install_relpaths
 
         final_install_relpaths = []
 
@@ -393,9 +407,28 @@ class RearrangeCMakeOutput(object):
         # add lines from the old __init__.py file to the config file
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts', '__init__.py'), 'r') as custom_init:
             custom_init_data = custom_init.read()
-        with open('%spython/cv2/config-%s.py'
-        % (cmake_install_dir, sys.version_info[0]), 'w') as opencv_init_config:
+
+        # OpenCV generates config with different name for case with PYTHON3_LIMITED_API=ON
+        config_py = os.path.join(cmake_install_dir, 'python', 'cv2', 'config-%s.%s.py'
+                                 % (sys.version_info[0], sys.version_info[1]))
+        if not os.path.exists(config_py):
+            config_py = os.path.join(cmake_install_dir, 'python', 'cv2', 'config-%s.py' % sys.version_info[0])
+
+        with open(config_py, 'w') as opencv_init_config:
             opencv_init_config.write(custom_init_data)
+
+        if sys.version_info >= (3, 6):
+            for p in install_relpaths:
+                if p.endswith(".pyi"):
+                    target_rel_path = os.path.relpath(p, "python/cv2")
+                    cls._setuptools_wrap._copy_file(
+                        os.path.join(cmake_install_dir, p),
+                        os.path.join(cmake_install_dir, "cv2", target_rel_path),
+                        hide_listing=False,
+                    )
+                    final_install_relpaths.append(os.path.join("cv2", target_rel_path))
+
+        del install_relpaths, fslash_install_relpaths
 
         for package_name, relpaths_re in cls.package_paths_re.items():
             package_dest_reldir = package_name.replace(".", os.path.sep)

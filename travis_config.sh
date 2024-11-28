@@ -16,7 +16,7 @@ function bdist_wheel_cmd {
     local abs_wheelhouse=$1
     # install all required packages in pyproject.toml, because bdist_wheel does not do it
     python${PYTHON_VERSION} -m pip install toml && python${PYTHON_VERSION} -c 'import toml; c = toml.load("pyproject.toml"); print("\n".join(c["build-system"]["requires"]))' | python${PYTHON_VERSION} -m pip install -r /dev/stdin
-    CI_BUILD=1 python${PYTHON_VERSION} setup.py bdist_wheel --py-limited-api=cp36 -v
+    CI_BUILD=1 python${PYTHON_VERSION} setup.py bdist_wheel --py-limited-api=cp37 -v
     cp dist/*.whl $abs_wheelhouse
     if [ -z "$IS_OSX" ]; then
       # this path can be changed in the latest manylinux image
@@ -34,8 +34,14 @@ if [ -n "$IS_OSX" ]; then
   export MAKEFLAGS="-j$(sysctl -n hw.ncpu)"
 else
   echo "    > Linux environment "
-  export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/Qt5.15.0/lib
+  export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/Qt5.15.13/lib
   export MAKEFLAGS="-j$(grep -E '^processor[[:space:]]*:' /proc/cpuinfo | wc -l)"
+  CURRENT_ARCH=$(uname -m)
+  if [[ $CURRENT_ARCH == 'aarch64' ]]; then
+    # To avoid network issues with pypi.org on OpenCV CN machines
+    export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+    echo "Running for linux aarch64"
+  fi
 fi
 
 if [ -n "$IS_OSX" ]; then
@@ -44,13 +50,13 @@ if [ -n "$IS_OSX" ]; then
 
     BREW_SLOW_BUILIDING_PACKAGES=$(printf '%s\n' \
         "cmake 15" \
-        "ffmpeg_opencv 10" \
+        "ffmpeg 10" \
     )
 
     function generate_ffmpeg_formula {
         local FF="ffmpeg"
-        local LFF="ffmpeg_opencv"
-        local FF_FORMULA; FF_FORMULA=$(brew formula "${FF}${FFMPEG_FORMULA_VERSION}")
+        local LFF="ffmpeg"
+        local FF_FORMULA; FF_FORMULA=$(brew formula "${FF}")
         local LFF_FORMULA; LFF_FORMULA="$(dirname "$FF_FORMULA")/${LFF}.rb"
 
         local REGENERATE
@@ -70,9 +76,8 @@ if [ -n "$IS_OSX" ]; then
         if [ -n "$REGENERATE" ]; then
             echo "Regenerating custom ffmpeg formula"
             # Bottle block syntax: https://docs.brew.sh/Bottles#bottle-dsl-domain-specific-language
-            # FfmpegAT4 is a class in ffmpeg@4 formula
             perl -wpe 'BEGIN {our ($found_blank, $bottle_block);}
-                if (/(^class )(FfmpegAT4)(\s.*)/) {$_=$1."FfmpegOpencv".$3."\n"; next;}
+                if (/(^class )(Ffmpeg)(\s.*)/) {$_=$1."Opencv".$3."\n"; next;}
                 if (!$found_blank && /^$/) {$_.="conflicts_with \"ffmpeg\"\n\n"; $found_blank=1; next;}
                 if (!$bottle_block && /^\s*bottle do$/) { $bottle_block=1; next; }
                 if ($bottle_block) { if (/^\s*end\s*$/) { $bottle_block=0} elsif (/^\s*sha256\s/) {$_=""} next; }
@@ -112,9 +117,9 @@ function pre_build {
     brew update
     generate_ffmpeg_formula
     brew_add_local_bottles
-    brew install --build-bottle ffmpeg_opencv
+    brew install --build-bottle ffmpeg
     # It needs when we use not the latest ffmpeg formula
-    brew link ffmpeg_opencv
+    brew link ffmpeg
 
     if [ -n "$CACHE_STAGE" ]; then
         brew_go_bootstrap_mode 0
@@ -138,7 +143,7 @@ function run_tests {
 
     echo "Running for linux"
 
-    if [ $PYTHON == "python3.6" ]; then
+    if [ $PYTHON == "python3.7" ]; then
       $PYTHON -m pip install -U numpy==1.19.4
     fi
     cd /io/tests
@@ -163,7 +168,7 @@ function pylint_test {
 
     echo "Starting Pylint tests..."
 
-    $PYTHON -m pip install pylint==2.12.2
+    $PYTHON -m pip install pylint==2.15.9
     cd /io/tests
     $PYTHON -m pylint /io/opencv/samples/python/squares.py
 }
