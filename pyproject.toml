@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-  "cmake>=3.13",
+  "cmake>=3.1",
   "numpy==1.13.3; python_version=='3.6' and platform_machine != 'aarch64' and platform_machine != 'arm64'",
   "numpy==1.17.0; python_version=='3.7' and platform_machine != 'aarch64' and platform_machine != 'arm64'",
   "numpy==1.17.5; python_version=='3.8' and platform_machine != 'aarch64' and platform_machine != 'arm64'",
