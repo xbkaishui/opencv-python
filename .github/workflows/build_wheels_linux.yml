@@ -41,7 +41,7 @@ jobs:
       MB_ML_VER: 2014
       TRAVIS_BUILD_DIR: ${{ github.workspace }}
       CONFIG_PATH: travis_config.sh
-      DOCKER_IMAGE: quay.io/opencv-ci/opencv-python-manylinux2014-x86-64:20240524
+      DOCKER_IMAGE: quay.io/opencv-ci/opencv-python-manylinux2014-x86-64:20241202
       USE_CCACHE: 0
       UNICODE_WIDTH: 32
       PLAT: x86_64
@@ -58,10 +58,10 @@ jobs:
           echo "ENABLE_ROLLING=1" >> $GITHUB_ENV
         fi
     - name: Checkout
-      uses: actions/checkout@v3
-      with:
-        submodules: false
-        fetch-depth: 0
+      run: |
+        echo "Source branch name: ${{ github.head_ref }}"
+        echo "Target branch name: ${{ github.base_ref }}"
+        git clone --depth 1 -b "${{ github.head_ref }}" "https://github.com/${{ github.event.pull_request.head.repo.full_name }}" "${{ github.workspace }}"
     - name: Build a package
       run: source scripts/build.sh
     - name: Saving all wheels
@@ -101,10 +101,10 @@ jobs:
       run: find . -mindepth 1 -delete
       working-directory: ${{ github.workspace }}
     - name: Checkout
-      uses: actions/checkout@v3
-      with:
-        submodules: true
-        fetch-depth: 0
+      run: |
+        echo "Source branch name: ${{ github.head_ref }}"
+        echo "Target branch name: ${{ github.base_ref }}"
+        git clone --depth 1 --recurse-submodules -b "${{ github.head_ref }}" "https://github.com/${{ github.event.pull_request.head.repo.full_name }}" "${{ github.workspace }}"
     - name: Setup Environment variables
       run: if [ "3.10" == "${{ matrix.python-version }}" -o "3.11" == "${{ matrix.python-version }}" -o "3.12" == "${{ matrix.python-version }}" ]; then echo "TEST_DEPENDS=$(echo $NP_TEST_DEP_LATEST)" >> $GITHUB_ENV; else echo "TEST_DEPENDS=$(echo $NP_TEST_DEP)" >> $GITHUB_ENV; fi
     - name: Download a wheel accordingly to matrix
@@ -139,7 +139,7 @@ jobs:
       NP_TEST_DEP: numpy==1.19.4
       TRAVIS_BUILD_DIR: ${{ github.workspace }}
       CONFIG_PATH: travis_config.sh
-      DOCKER_IMAGE: quay.io/opencv-ci/opencv-python-manylinux2014-x86-64:20240524
+      DOCKER_IMAGE: quay.io/opencv-ci/opencv-python-manylinux2014-x86-64:20241202
       USE_CCACHE: 1
       UNICODE_WIDTH: 32
       SDIST: ${{ matrix.build_sdist || 0 }}
@@ -155,10 +155,10 @@ jobs:
           echo "ENABLE_ROLLING=1" >> $GITHUB_ENV
         fi
     - name: Checkout
-      uses: actions/checkout@v3
-      with:
-        submodules: false
-        fetch-depth: 0
+      run: |
+        echo "Source branch name: ${{ github.head_ref }}"
+        echo "Target branch name: ${{ github.base_ref }}"
+        git clone --depth 1 -b "${{ github.head_ref }}" "https://github.com/${{ github.event.pull_request.head.repo.full_name }}" "${{ github.workspace }}"
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:
